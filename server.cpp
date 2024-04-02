@@ -10,31 +10,18 @@
 #include <semaphore.h>
 #include "protocol.pb.h"
 using namespace std;
-// to compile:
-// g++ server.cpp protocol.pb.cc -o serverx -lprotobuf -lpthread
 
-//estructura para modelar al cliente y facilitar el manejo de su información
 struct Cli{
     int socket;
     string username;
-    char ip[INET_ADDRSTRLEN]; //16 bits
+    char ip[INET_ADDRSTRLEN]; 
     string status;
 };
 
-//all the clients en un "diccionario"
+
 unordered_map<string,Cli*> servingCLients;
 
-/**
- * Devuelve error al socket indicado
- * socketId: int -> del socket a decvolver 
- * errorMessage: stirng -> mensaje de error a devolver
- * optionHandler: int -> el tipo de request que se estaba realizando
- * >1: Registro de Usuarios
- * >2: Usuarios Conectados
- * >3: Cambio de Estado
- * >4: Mensajes
- * >5: Informacion de un usuario en particular
-*/
+
 void ErrorResponse(int optionHandled , int socketID , string errorMessage){
     char buff[8192];
     chat::ServerResponse *errorRes = new chat::ServerResponse();
@@ -42,13 +29,12 @@ void ErrorResponse(int optionHandled , int socketID , string errorMessage){
     errorRes->set_option(optionHandled);
     errorRes->set_code(500);
     errorRes->set_servermessage(errorMessage);
-    //calcular tamaño del buffer a emplear
     errorRes->SerializeToString(&msSerialized);
     strcpy(buff, msSerialized.c_str());
     if(!send(socketID, buff, msSerialized.size() + 1, 0)){cout<<"E: HANDLER FAILED"<<endl;};
 }
 
-//función para el manejo de requests
+
 void *requestsHandler(void *params){
     struct Cli client;
     struct Cli *newClient = (struct Cli *)params; 
@@ -238,7 +224,6 @@ void *requestsHandler(void *params){
 }
 
 int main(int argc, char const* argv[]){
-    //verificar versiión de protobuf para evitar errores
     GOOGLE_PROTOBUF_VERIFY_VERSION;
     if (argc != 2){
         fprintf(stderr, "NO PORT DECLARED: server <port>\n");
@@ -254,45 +239,36 @@ int main(int argc, char const* argv[]){
     server.sin_addr.s_addr = INADDR_ANY;
     memset(server.sin_zero, 0, sizeof server.sin_zero);
 
-    // si hubo error al crear el socket para el cliente
     if ((socket_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1){
         fprintf(stderr, "ERROR: create socket\n");
         return 1;
     }
 
-    // si hubo error al crear el socket para el cliente y enlazar ip
     if (bind(socket_fd, (struct sockaddr *)&server, sizeof(server)) == -1){
         close(socket_fd);
         fprintf(stderr, "ERROR: bind IP to socket.\n");
         return 2;
     }
 	
-    // si hubo error al crear el socket para esperar respuestas
     if (listen(socket_fd, 5) == -1){
         close(socket_fd);
         fprintf(stderr, "ERROR: listen socket\n");
         return 3;
     }
 
-
-    // si no hubo errores se puede proceder con el listen del server
     printf("SUCCESS: listening on port-> %ld\n", port);
 	
     while (1){
 	    
-        // la funcion accept nos permite ver si se reciben o envian mensajes
         new_req_size = sizeof incomminig_req;
         new_req_ip = accept(socket_fd, (struct sockaddr *)&incomminig_req, &new_req_size);
 	    
-        // si hubo error al crear el socket para el cliente
         if (new_req_ip == -1){
             perror("ERROR: accept socket incomming connection\n");
             continue;
         }
         
         
-	    
-        //si falla el socket, un hilo se encargará del manejo de las requests del user
         struct Cli newClient;
         newClient.socket = new_req_ip;
         inet_ntop(AF_INET, &(incomminig_req.sin_addr), newClient.ip, INET_ADDRSTRLEN);
@@ -302,7 +278,6 @@ int main(int argc, char const* argv[]){
         pthread_create(&thread_id, &attrs, requestsHandler, (void *)&newClient);
     }
 	
-    // si hubo error al crear el socket para el cliente
     google::protobuf::ShutdownProtobufLibrary();
 	return 0;
 
