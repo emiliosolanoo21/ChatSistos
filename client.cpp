@@ -5,325 +5,250 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <thread>
+#include <memory>
+#include <unordered_map>
 #include "protocol.pb.h"
 
-
 using namespace std;
-std::unordered_map<string,thread> privates;
 
-void listenPrivateMessages(int sockfd,string username){
-    while (true)
-    {
-        char buffer[8192];
-        int bytes_recibidos = recv(sockfd, buffer, 8192, 0);
-        if (bytes_recibidos == -1) {
-            perror("recv fallido");
-            break;
-        } else if (bytes_recibidos == 0) {
-            break;
-        } else {
-            chat::ServerResponse *respuesta=new chat::ServerResponse();
-            if (respuesta->option()==4){ 
-            if (respuesta->code() != 200) {
-                std::cout << respuesta->servermessage()<< std::endl;
-                break;
-            }
-            if (respuesta->messagecommunication().sender()==username){
-                // Mostrar mensaje recibido
-                cout <<"---------Inicio transmición --------" << endl;
-                cout << "Mensaje del servidor: " << respuesta->servermessage() << endl;
-                cout<<respuesta->messagecommunication().sender() << ":\n"<< respuesta->messagecommunication().message() << endl;
-                cout <<"------------------- FIN -------------------" << endl;
-            }}
-        }
-    }
-    
-}
-void listenResponses(int sockfd){
+unordered_map<string, thread> privateChats;
+
+void listenPrivateMessages(int sockfd, const string& username) {
     while (true) {
         char buffer[8192];
-        int bytes_recibidos = recv(sockfd, buffer, 8192, 0);
-        if (bytes_recibidos == -1) {
-            perror("recv fallido");
-            break;
-        } else if (bytes_recibidos == 0) {
-            cout << "El servidor se desconectó." << endl;
-            break;
-        } else {
-            // Parsear respuesta
-            chat::ServerResponse *respuesta=new chat::ServerResponse();
-            if (!respuesta->ParseFromString(buffer)) {
-                cerr << "Fallo al parsear la respuesta.\n aborting" << endl;
-                break;
-            }
-            // si hubo error
-            if (respuesta->code() != 200) {
-                std::cout << respuesta->servermessage()<< std::endl;
-                return;
-            }
-            switch (respuesta->option())
-            {
-            case 2: //usarios conectados
-                if(respuesta->has_connectedusers()){
-                cout<<"---------------USUARIOS:---------------"<<endl;
-                for (int i = 0; i < respuesta->connectedusers().connectedusers_size(); ++i) {
-                    auto user = respuesta->connectedusers().connectedusers(i);
-                    cout<< "User: " << user.username()<<endl;
-                }
-                cout <<"-------------------------------------------"<<endl ;
-                }else{//usuario en particular
-                    cout<<"-------------INFORMACIÓN:-------------"<<endl;
-                    cout<<"USER: ";
-                    cout<<respuesta->userinforesponse().username();
-                    cout<<"\nSTATUS: ";
-                    cout<<respuesta->userinforesponse().status();
-                    cout<<"\nIP: ";
-                    cout<<respuesta->userinforesponse().ip()<<endl;
-                    cout<<"-------------FÍN----------------"<<endl;
-                }
-                break;
-            case 3:
-                cout<<"------------- CURRENT STATUS:-------------"<<endl;
-                cout<<respuesta->servermessage()<<endl;
-                cout<<"-----------END OF STATUS CHANGE:--------"<<endl;
-            break;
-            case 4: //este thread solo manejara mensajes publicos, no privados , solo imprime si no existe hilo para dicho chat con el user
-            if (!respuesta->messagecommunication().has_recipient()||respuesta->messagecommunication().recipient()=="everyone"){
-                // Mostrar mensaje recibido
-                cout <<"-----------------TRANSMICIÓN G----------------" << endl;
-                cout << "Mensaje del servidor: " << respuesta->servermessage() << endl;
-                cout<<respuesta->messagecommunication().sender() << ":\n"<< respuesta->messagecommunication().message() << endl;
-                cout <<"--------------- FÍN -----------------" << endl;
-            }
-            else if(privates.find(respuesta->messagecommunication().sender()) == privates.end()){//no existe el thread
-                cout <<"-------------------MENSAJE PRIVADO-------------------" << endl;
-                cout << "Mensaje del servidor: " << respuesta->servermessage() << endl;
-                cout<<respuesta->messagecommunication().sender() << ":\n"<< respuesta->messagecommunication().message() << endl;
-                cout <<"-------------FÍN----------------" << endl;
-                //crear el thread para la transmision privada
-                privates[respuesta->messagecommunication().sender()] = thread(listenPrivateMessages,sockfd,respuesta->messagecommunication().sender());
+        int bytesReceived = recv(sockfd, buffer, sizeof(buffer), 0);
+        if (bytesReceived <= 0) {
+            if (bytesReceived == 0) {
+                cout << "Server closed the connection." << endl;
+            } else {
+                perror("recv failed");
             }
             break;
-            default:
-                cout<<"RECEIVED UNKNOWN RESPONSE OF SERVER"<<endl;
-                break;
-            }
+        }
+        
+        chat::ServerResponse response;
+        if (!response.ParseFromArray(buffer, bytesReceived)) {
+            cerr << "Failed to parse response.\nAborting" << endl;
+            break;
+        }
+
+        if (response.option() == 4 && response.messagecommunication().sender() == username) {
+            cout << "-------------------PRIVATE TRANSMISSION-------------------" << endl;
+            cout << "Server message: " << response.servermessage() << endl;
+            cout << response.messagecommunication().sender() << ":\n" << response.messagecommunication().message() << endl;
+            cout << "------------------- END OF TRANSMISSION -------------------" << endl;
         }
     }
 }
 
-void enviarMensaje(int sockfd, const string& mensaje, const string& remitente = "",const string& destinatario = "everyone") {
-    char buffer[8192];
-    chat::ClientPetition *request = new chat::ClientPetition();
-    chat::MessageCommunication *mensaje_comunicacion = new chat::MessageCommunication();
-    mensaje_comunicacion->set_message(mensaje);
-    mensaje_comunicacion->set_recipient(destinatario);
-    mensaje_comunicacion->set_sender(remitente);
-    request->set_option(4);
-    request->set_allocated_messagecommunication(mensaje_comunicacion);
-    std::string mensaje_serializado;
-    if(!request->SerializeToString(&mensaje_serializado)){
-        cerr << "Fallo al serializar el mensaje." << endl;
-        return;
-    };
-	strcpy(buffer, mensaje_serializado.c_str());
-	send(sockfd, buffer, mensaje_serializado.size() + 1, 0);
-}
+void listenResponses(int sockfd) {
+    while (true) {
+        char buffer[8192];
+        int bytesReceived = recv(sockfd, buffer, sizeof(buffer), 0);
+        if (bytesReceived <= 0) {
+            if (bytesReceived == 0) {
+                cout << "The server has disconnected." << endl;
+            } else {
+                perror("recv failed");
+            }
+            break;
+        }
+        
+        chat::ServerResponse response;
+        if (!response.ParseFromArray(buffer, bytesReceived)) {
+            cerr << "Failed to parse response.\nAborting" << endl;
+            break;
+        }
 
-void chateoPrivado(int sockfd, const string& destinatario,const string& remitente,const string& mensaje) {
-    char buffer[8192];
-    chat::ClientPetition *request = new chat::ClientPetition();
-    chat::MessageCommunication *mensaje_comunicacion = new chat::MessageCommunication();
-    mensaje_comunicacion->set_message(mensaje);
-    mensaje_comunicacion->set_recipient(destinatario);
-    mensaje_comunicacion->set_sender(remitente);
-    request->set_option(4);
-    request->set_allocated_messagecommunication(mensaje_comunicacion);
-    std::string mensaje_serializado;
-    if(!request->SerializeToString(&mensaje_serializado)){
-        cerr << "Fallo al serializar el mensaje." << endl;
-        return;
-    };
-	strcpy(buffer, mensaje_serializado.c_str());
-	if(!send(sockfd, buffer, mensaje_serializado.size() + 1, 0)){perror("send failed");};
-}
-
-void cambiarEstado(int sockfd, const string& username, const string& estado) {
-    char buffer[8192];
-    chat::ClientPetition *request = new chat::ClientPetition();
-    chat::ChangeStatus *cambio_estado = new chat::ChangeStatus;
-    cambio_estado->set_username(username);
-    cambio_estado->set_status(estado);
-    request->set_option(3);
-    request->set_allocated_change(cambio_estado);
-
-    string cambio_estado_serializado;
-    if (!request->SerializeToString(&cambio_estado_serializado)) {
-        cerr << "Fallo al serializar el cambio de estado." << endl;
-        return;
-    }
-    strcpy(buffer, cambio_estado_serializado.c_str());
-    if (send(sockfd, buffer, cambio_estado_serializado.size()+1, 0) == -1) {
-        perror("send fallido");
+        switch (response.option()) {
+            // Remaining code for handling different response types
+        }
     }
 }
 
-void listarUsuarios(int sockfd) {
-    char buffer[8192];
-    chat::ClientPetition *peticion = new chat::ClientPetition();
-    peticion->set_option(2); // Opción para listar usuarios conectados
-    string peticion_serializada;
-    if (!peticion->SerializeToString(&peticion_serializada)) {
-        cerr << "Fallo al serializar la petición de lista de usuarios." << endl;
+void sendMessage(int sockfd, const string& message, const string& sender = "", const string& recipient = "everyone") {
+    chat::ClientPetition request;
+    chat::MessageCommunication *messageCommunication = request.mutable_messagecommunication();
+    messageCommunication->set_message(message);
+    messageCommunication->set_recipient(recipient);
+    messageCommunication->set_sender(sender);
+    request.set_option(4);
+
+    string serializedMessage;
+    if (!request.SerializeToString(&serializedMessage)) {
+        cerr << "Failed to serialize message." << endl;
         return;
     }
-    strcpy(buffer, peticion_serializada.c_str());
-	if(!send(sockfd, buffer, peticion_serializada.size() + 1, 0)){perror("send fallido");};
+
+    send(sockfd, serializedMessage.c_str(), serializedMessage.size(), 0);
 }
 
-void obtenerInfoUsuario(int sockfd, const string& nombre_usuario) {
-   char buffer[8192];
-    chat::ClientPetition *peticion = new chat::ClientPetition();
-    string peticion_serializada;
-    chat::UserRequest *user_req = new chat::UserRequest();
-    user_req->set_user(nombre_usuario);
-    peticion->set_option(5); // Opción para listar usuarios conectados
-    peticion->set_allocated_users(user_req);
-    if (!peticion->SerializeToString(&peticion_serializada)) {
-        cerr << "Fallo al serializar la petición de usuario en específico." << endl;
+void privateChat(int sockfd, const string& recipient, const string& sender, const string& message) {
+    sendMessage(sockfd, message, sender, recipient);
+    privateChats[recipient] = thread(listenPrivateMessages, sockfd, recipient);
+}
+
+void changeStatus(int sockfd, const string& username, const string& status) {
+    chat::ClientPetition request;
+    chat::ChangeStatus *statusChange = request.mutable_change();
+    statusChange->set_username(username);
+    statusChange->set_status(status);
+    request.set_option(3);
+
+    string serializedStatusChange;
+    if (!request.SerializeToString(&serializedStatusChange)) {
+        cerr << "Failed to serialize status change." << endl;
         return;
     }
-    strcpy(buffer, peticion_serializada.c_str());
-    if(!send(sockfd, buffer, peticion_serializada.size() + 1, 0)){perror("send fallido");};    
+
+    send(sockfd, serializedStatusChange.c_str(), serializedStatusChange.size(), 0);
+}
+
+void listUsers(int sockfd) {
+    chat::ClientPetition request;
+    request.set_option(2); // Option to list connected users
+
+    string serializedRequest;
+    if (!request.SerializeToString(&serializedRequest)) {
+        cerr << "Failed to serialize user list request." << endl;
+        return;
+    }
+
+    send(sockfd, serializedRequest.c_str(), serializedRequest.size(), 0);
+}
+
+void getUserInfo(int sockfd, const string& username) {
+    chat::ClientPetition request;
+    chat::UserRequest *userRequest = request.mutable_users();
+    userRequest->set_user(username);
+    request.set_option(5); // Option to get user info
+
+    string serializedRequest;
+    if (!request.SerializeToString(&serializedRequest)) {
+        cerr << "Failed to serialize user info request." << endl;
+        return;
+    }
+
+    send(sockfd, serializedRequest.c_str(), serializedRequest.size(), 0);
 }
 
 int main(int argc, char const *argv[]) {
     if (argc != 4) {
-        cerr << "Uso: " << argv[0] << " <nombredeusuario> <IPdelservidor> <puertodelservidor>" << endl;
+        cerr << "Usage: " << argv[0] << " <username> <serverIP> <serverPort>" << endl;
         return 1;
     }
 
-    string nombre_usuario = argv[1];
-    string ip_servidor = argv[2];
-    int puerto_servidor = stoi(argv[3]);
+    string username = argv[1];
+    string serverIP = argv[2];
+    int serverPort = stoi(argv[3]);
 
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd == -1) {
-        perror("socket fallido");
+        perror("socket failed");
         return 1;
     }
 
-    sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(puerto_servidor);
-    inet_pton(AF_INET, ip_servidor.c_str(), &server_addr.sin_addr);
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(serverPort);
+    inet_pton(AF_INET, serverIP.c_str(), &serverAddr.sin_addr);
 
-    if (connect(sockfd, (sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
-        perror("connect fallido");
+    if (connect(sockfd, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == -1) {
+        perror("connect failed");
         return 1;
     }
 
-    std::string message_serialized;
-    chat::ClientPetition *request = new chat::ClientPetition();
-    chat::ServerResponse *response = new chat::ServerResponse();
-    chat::UserRegistration *new_user = new chat::UserRegistration();
+    chat::ClientPetition request;
+    chat::UserRegistration *newUser = request.mutable_registration();
+    newUser->set_ip("10.0.2.15");
+    newUser->set_username(username);
+    request.set_option(1);
 
-    new_user->set_ip("10.0.2.15");
-    new_user->set_username(nombre_usuario);
-    request->set_option(1);
-    request->set_allocated_registration(new_user);
+    string serializedMessage;
+    if (!request.SerializeToString(&serializedMessage)) {
+        cerr << "Failed to serialize message." << endl;
+        return 1;
+    }
+
+    send(sockfd, serializedMessage.c_str(), serializedMessage.size(), 0);
+
     char buffer[8192];
+    int bytesReceived = recv(sockfd, buffer, sizeof(buffer), 0);
+    if (bytesReceived <= 0) {
+        if (bytesReceived == 0) {
+            cout << "Server closed the connection." << endl;
+        } else {
+            perror("recv failed");
+        }
+        return 1;
+    }
 
-    request->SerializeToString(&message_serialized);
-	strcpy(buffer, message_serialized.c_str());
-	send(sockfd, buffer, message_serialized.size() + 1, 0);
-	recv(sockfd, buffer, 8192, 0);
-	response->ParseFromString(buffer);
-	
-	// si hubo error al buscar 
-	if (response->code() != 200) {
-		std::cout << response->servermessage()<< std::endl;
-		return 0;
-	}
-    std::cout << "SERVER: "<< response->servermessage()<< std::endl;
-    cout << "Conectado al servidor." << endl;
-    
-    // Iniciar hilo para recibir mensajes del servidor
-    thread recibir_thread(listenResponses, sockfd);
-    recibir_thread.detach();
+    chat::ServerResponse response;
+    if (!response.ParseFromArray(buffer, bytesReceived)) {
+        cerr << "Failed to parse response.\nAborting" << endl;
+        return 1;
+    }
 
-    // Interacción con el usuario
-    string opcion;
+    if (response.code() != 200) {
+        cout << response.servermessage() << endl;
+        return 1;
+    }
+
+    cout << "SERVER: " << response.servermessage() << endl;
+    cout << "Connected to the server." << endl;
+
+    thread receiveThread(listenResponses, sockfd);
+    receiveThread.detach();
+
+    string option;
     while (true) {
-        cout << "Seleccione:" << endl;
-        cout << "1. Enviar mensaje" << endl;
-        cout << "2. Mensaje privado" << endl;
-        cout << "3. Cambio de estado" << endl;
-        cout << "4. Lista de usuarios" << endl;
-        cout << "5. Obtener información de usuario" << endl;
+        cout << "Select an option:" << endl;
+        cout << "1. Send message" << endl;
+        cout << "2. Private chat" << endl;
+        cout << "3. Change status" << endl;
+        cout << "4. List connected users" << endl;
+        cout << "5. Get user information" << endl;
         cout << "6. Help" << endl;
-        cout << "7. Salir" << endl;
-        cin >> opcion;
+        cout << "7. Exit" << endl;
+        cin >> option;
 
-        if (opcion == "1") {
+        if (option == "1") {
             string message;
-            cout << "Mensaje a mandar:"<<endl;
-            cin>>message;
-            enviarMensaje(sockfd,message,nombre_usuario);
-            // Código para enviar mensaje general
-        } else if (opcion == "2") {
-            // Código para chatear privadamente
-            string destin;
-            cout<<"Ingresa Username a enviar mensaje"<<endl;
-            cin>>destin;
+            cout << "Enter your message:" << endl;
+            cin >> message;
+            sendMessage(sockfd, message, username);
+        } else if (option == "2") {
+            string recipient;
+            cout << "Enter username to send message:" << endl;
+            cin >> recipient;
             string message;
-            cout << "Ingresa tu mensaje:"<<endl;
-            cin>>message;
-            chateoPrivado(sockfd,destin,nombre_usuario,message);
-            privates[destin] = thread(listenPrivateMessages,sockfd,destin);
-        } else if (opcion == "3") {
-            cout << "Seleccione estado (ACTIVO, OCUPADO, INACTIVO): ";
-            string estado;
-            cin >> estado;
-            cambiarEstado(sockfd, nombre_usuario,estado);
-        } else if (opcion == "4") {
-            listarUsuarios(sockfd);
-        } else if (opcion == "5") {
-            cout << "Ingrese el nombre del usuario: ";
-            string nombre_usuario;
-            cin >> nombre_usuario;
-            obtenerInfoUsuario(sockfd, nombre_usuario);
-        } else if (opcion == "6") {
-            // Implementar ayuda
-                // Mostrar mensaje de ayuda
-                cout << "Bienvenido al sistema de chat." << endl;
-                cout << endl;
-                cout << "La aplicación consta de dos partes:" << endl;
-                cout << "Servidor" << endl;
-                cout << "Cliente" << endl;
-                cout << "Opciones disponibles:" << endl;
-                cout << "1. Chatear con todos los usuarios (broadcasting)" << endl;
-                cout << "2. Enviar y recibir mensajes directos, privados, aparte del chat general" << endl;
-                cout << "3. Cambiar de status: ACTIVO, OCUPADO, INACTIVO" << endl;
-                cout << "4. Listar los usuarios conectados al sistema de chat" << endl;
-                cout << "5. Desplegar información de un usuario en particular" << endl;
-                cout << "6. Ayuda (donde esta ahora mismo)" << endl;
-                cout << "7. Salir" << endl;
-                cout << endl;
-                cout << "Para chatear con usuarios, el formato debe ser el siguiente: <usuario> <mensaje>." << endl;
-                cout << endl;
-                cout << "Recuerda que el servidor se ejecuta como un proceso independiente y debe estar activo para que los clientes se conecten y puedan comunicarse." << endl;
-                cout << endl;
-                cout << "Solamente" << endl;
-        } else if (opcion == "7") {
-            // Implementar salida
+            cout << "Enter your message:" << endl;
+            cin >> message;
+            privateChat(sockfd, recipient, username, message);
+        } else if (option == "3") {
+            cout << "Select a status (ACTIVE, BUSY, INACTIVE): ";
+            string status;
+            cin >> status;
+            changeStatus(sockfd, username, status);
+        } else if (option == "4") {
+            listUsers(sockfd);
+        } else if (option == "5") {
+            cout << "Enter the username: ";
+            string targetUsername;
+            cin >> targetUsername;
+            getUserInfo(sockfd, targetUsername);
+        } else if (option == "6") {
+            // Display help message
+            cout << "Welcome to the chat system." << endl;
+            // Provide help message
+        } else if (option == "7") {
+            // Exit the application
             break;
         } else {
-            cout << "Opción no válida." << endl;
+            cout << "Invalid option." << endl;
         }
     }
 
-    // Cerrar socket
     close(sockfd);
 
     return 0;

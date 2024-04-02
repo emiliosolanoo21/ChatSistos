@@ -1,7 +1,3 @@
-/**
-*Arturo Argueta 21527
-*Daniel EStrada 
-*/
 #include <iostream>
 #include <netinet/in.h>
 #include <stdio.h>
