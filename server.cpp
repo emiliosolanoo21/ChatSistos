@@ -41,13 +41,12 @@ void *requestsHandler(void *params){
     int socket = newClient->socket; 
     char buffer[8192];
 
-    // Server Structs
     string msgServer;
     chat::ClientPetition *request = new chat::ClientPetition();
     chat::ServerResponse *response = new chat::ServerResponse();
     while(1){
-        //this will done forever
-        response->Clear(); //limpiar la response enviada
+        
+        response->Clear(); 
         int bytes_received = recv(socket, buffer, 8192, 0);
         if(bytes_received<=0){
             servingCLients.erase(client.username);
@@ -129,7 +128,7 @@ void *requestsHandler(void *params){
 				break;
 			}
 			case 4:{ 
-                if(!request->messagecommunication().has_recipient()||request->messagecommunication().recipient()=="everyone"){ //a chat global
+                if(!request->messagecommunication().has_recipient()||request->messagecommunication().recipient()=="everyone"){
                     std::cout<<"\n__SENDING GENERAL MESSAGE__\nUser: "<<request->messagecommunication().sender()<<" is trying to send a general message";
                     for (auto i:servingCLients){
                         if (i.first==request->messagecommunication().sender()){
