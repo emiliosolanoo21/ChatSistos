@@ -160,7 +160,7 @@ int main(int argc, char const *argv[]) {
 
     chat::ClientPetition request;
     chat::UserRegistration *newUser = request.mutable_registration();
-    newUser->set_ip("10.0.2.15");
+    newUser->set_ip("127.0.0.1");
     newUser->set_username(username);
     request.set_option(1);
 
