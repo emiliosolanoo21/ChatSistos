@@ -61,7 +61,7 @@ void *requestsHandler(void *params){
             cout<<"option received:" << request->option() << endl;
         }
         switch (request->option()){
-			case 1:{ //registrar un nuevo usuario en el servidor
+			case 1:{ 
 				std::cout<<std::endl<<"__RECEIVED INFO__\nUsername: "<<request->registration().username()<<"		ip: "<<request->registration().ip();
 				if (servingCLients.count(request->registration().username()) > 0)
 				{
@@ -83,8 +83,8 @@ void *requestsHandler(void *params){
 				servingCLients[client.username] = &client;
 				break;
 			}
-            case 2:{ //ask for all users
-                if(request->users().user()!= "" || !request->users().has_user()){ //empty or it has no parameter
+            case 2:{ 
+                if(request->users().user()!= "" || !request->users().has_user()){ 
                     chat::ConnectedUsersResponse *users = new chat::ConnectedUsersResponse();
                     for(auto i:servingCLients){
                         chat::UserInfo *user_in_pos = new chat::UserInfo();
@@ -108,7 +108,7 @@ void *requestsHandler(void *params){
                 }
 				break;
 			}
-			case 3:{ //change status
+			case 3:{ 
                 try{
                 servingCLients[request->change().username()]->status = request->change().status();
                 std::cout<<"User: "<<client.username<<" status has changed successfully\n";
@@ -128,7 +128,7 @@ void *requestsHandler(void *params){
                 }
 				break;
 			}
-			case 4:{ //enviar mensaje
+			case 4:{ 
                 if(!request->messagecommunication().has_recipient()||request->messagecommunication().recipient()=="everyone"){ //a chat global
                     std::cout<<"\n__SENDING GENERAL MESSAGE__\nUser: "<<request->messagecommunication().sender()<<" is trying to send a general message";
                     for (auto i:servingCLients){
@@ -159,7 +159,7 @@ void *requestsHandler(void *params){
                         }
                     }
                 }
-                else{ //is a direct message
+                else{ 
                     std::cout<<"\n__SENDING PRIVATE MESSAGE__\nUser: "<<request->messagecommunication().sender()<<" is trying to send a private message to ->"<<request->messagecommunication().recipient();
                     auto _ = servingCLients.find(request->messagecommunication().recipient()); 
                     if (_ != servingCLients.end()){
@@ -175,7 +175,6 @@ void *requestsHandler(void *params){
                         strcpy(buffer, msgServer.c_str());
                         send(servingCLients[request->messagecommunication().recipient()]->socket, buffer, msgServer.size() + 1, 0);
                         response->Clear();
-                        //inform the sender that it was a succes
                         chat::MessageCommunication *response_message = new chat::MessageCommunication();
                         response_message->set_message("");
                         response->set_allocated_messagecommunication(response_message);
@@ -187,17 +186,16 @@ void *requestsHandler(void *params){
                         send(socket, buffer, msgServer.size() + 1, 0);
                         std::cout<<"\nSUCCESS:User: "+request->messagecommunication().sender()+" has sent the message successfully ->"+request->messagecommunication().recipient()+"\n";
                     }
-                    else{ // no existe
+                    else{
                         ErrorResponse(4,socket,"ERROR: recipient doesn't exist" );
                         cout<<"E: " + request->messagecommunication().sender()+ "tried to send to unexisting user: "+request->messagecommunication().recipient()<<endl;
                     }
                 }
 				break;
 			}
-			case 5:{ //obtener usuario en específico
+			case 5:{
 				chat::UserInfo *userI = new chat::UserInfo();
                 if (servingCLients.find(request->users().user()) != servingCLients.end()){
-                    //intentar obtener dicho valor con la llave (username)
                     userI->set_username(servingCLients[request->users().user()]->username);                    
                     userI->set_ip(servingCLients[request->users().user()]->ip);
                     userI->set_status(servingCLients[request->users().user()]->status);
@@ -210,7 +208,7 @@ void *requestsHandler(void *params){
                     send(socket, buffer, msgServer.size() + 1, 0);
                     std::cout<<"\n__USER INFO SOLICITUDE__\nUser: "<<client.username<<" requested info of ->"<<request->users().user()<<"\nSUCCESS: userinfo of "<<request->users().user()<<std::endl;
                 }
-                else{ //no existe el usuario
+                else{ 
                     ErrorResponse(5,socket,"ERROR: user doesn'e exist");
                     std::cout<<"\n__USER INFO SOLICITUDE__\nUser: "<<client.username<<" requested info of ->"<<request->users().user()<<"\nERROR: userinfo of "<<request->users().user()<<std::endl;
                 }
